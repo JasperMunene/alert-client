@@ -1,103 +1,144 @@
+"use client";
+
+import { Button } from "@/components/ui/button";
+import { ArrowRight, Stethoscope, Heart, Users,  PenTool, Activity, BookOpen } from "lucide-react";
+import Link from "next/link";
 import Image from "next/image";
 
-export default function Home() {
+const Home = () => {
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+      <div className="min-h-screen bg-background">
+        {/* Hero Section */}
+        <section className="relative overflow-hidden bg-surface-gradient">
+          <div className="absolute inset-0">
             <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
+                src='/aboutalert.jpg'
+                alt="Alert Hospital - Caring for our community"
+                fill
+                className="object-cover opacity-20"
+                priority
             />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+          </div>
+          <div className="relative container mx-auto px-6 py-24">
+            <div className="max-w-4xl mx-auto text-center">
+              <div className="inline-flex items-center gap-2 bg-primary-soft text-primary px-6 py-3 rounded-full text-sm font-medium mb-8">
+                <Heart className="h-4 w-4" />
+                Alert Hospital Blog
+              </div>
+              <h1 className="text-6xl md:text-7xl font-bold mb-8 leading-tight text-blue-500">
+                Health Stories &
+                <br />
+                <span className="bg-blog-gradient bg-clip-text text-transparent">
+                Medical Insights
+                </span>
+              </h1>
+              <p className="text-xl md:text-2xl text-muted-foreground mb-12 leading-relaxed max-w-3xl mx-auto">
+                Stay informed with expert medical insights, patient success stories, and the latest
+                healthcare developments from Alert Hospital&apos;s dedicated team of professionals.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <Button size="lg" asChild>
+                  <Link href="/blog">
+                  <span className="flex items-center">
+                    < PenTool className="h-5 w-5 mr-2" />
+                    Start Writing
+                    <ArrowRight className="h-5 w-5 ml-2" />
+                  </span>
+                  </Link>
+                </Button>
+                <Button variant="outline" size="lg" asChild>
+                  <Link href="/about">
+                  <span className="flex items-center">
+                    <BookOpen className="h-5 w-5 mr-2" />
+                    View posts
+                  </span>
+                  </Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Features Section */}
+        <section className="container mx-auto px-6 py-24">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold mb-4">
+              Your trusted source for
+              <span className="text-primary"> healthcare information</span>
+            </h2>
+            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+              Expert medical content, patient stories, and health education from Alert Hospital&apos;s team
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            <div className="text-center p-8 rounded-xl bg-card shadow-soft hover:shadow-medium transition-all">
+              <div className="w-16 h-16 bg-primary-soft rounded-full flex items-center justify-center mx-auto mb-6">
+                <Stethoscope className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold mb-4">Expert Medical Insights</h3>
+              <p className="text-muted-foreground">
+                Get the latest medical knowledge from our experienced doctors and specialists,
+                explained in clear, accessible language.
+              </p>
+            </div>
+
+            <div className="text-center p-8 rounded-xl bg-card shadow-soft hover:shadow-medium transition-all">
+              <div className="w-16 h-16 bg-primary-soft rounded-full flex items-center justify-center mx-auto mb-6">
+                <Users className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold mb-4">Patient Stories</h3>
+              <p className="text-muted-foreground">
+                Read inspiring stories of recovery, breakthrough treatments, and the compassionate
+                care that makes Alert Hospital special.
+              </p>
+            </div>
+
+            <div className="text-center p-8 rounded-xl bg-card shadow-soft hover:shadow-medium transition-all">
+              <div className="w-16 h-16 bg-primary-soft rounded-full flex items-center justify-center mx-auto mb-6">
+                <Activity className="h-8 w-8 text-primary" />
+              </div>
+              <h3 className="text-xl font-semibold mb-4">Health & Wellness</h3>
+              <p className="text-muted-foreground">
+                Discover preventive care tips, wellness advice, and lifestyle recommendations
+                to help you live your healthiest life.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* CTA Section */}
+        <section className="container mx-auto px-6 py-24">
+          <div className="max-w-3xl mx-auto text-center bg-surface-gradient rounded-2xl p-12 shadow-medium">
+            <h2 className="text-4xl font-bold mb-6">
+              Stay connected with Alert Hospital
+            </h2>
+            <p className="text-xl text-muted-foreground mb-8">
+              Subscribe to our blog for the latest health insights, medical breakthroughs,
+              and stories from our healthcare community.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <Button size="lg" asChild>
+                <Link href="/blog">
+                <span className="flex items-center">
+                  Explore Our Blog
+                  <ArrowRight className="h-5 w-5 ml-2" />
+                </span>
+                </Link>
+              </Button>
+              <Button variant="outline" size="lg" asChild>
+                <Link href="/contact">
+                <span className="flex items-center">
+                  <Heart className="h-5 w-5 mr-2" />
+                  Contact Us
+                </span>
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </section>
+      </div>
   );
-}
+};
+
+export default Home;
