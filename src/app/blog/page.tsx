@@ -66,7 +66,7 @@ interface EditorPostData {
 }
 
 
-const API_BASE_URL = 'https://vp-hood-lighting-trials.trycloudflare.com/api/v1';
+const API_BASE_URL = 'https://alert-server-xzlx.onrender.com/api/v1';
 
 export default function Blog() {
     const [posts, setPosts] = useState<Post[]>([]);

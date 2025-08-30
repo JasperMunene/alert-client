@@ -1,4 +1,6 @@
-import { useState, useRef } from "react";
+// components/BlogEditor.tsx
+import { useState, useRef, useCallback } from "react";
+import dynamic from "next/dynamic";
 import Image from "next/image"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,14 +12,11 @@ import {
     Save,
     Eye,
     Send,
-    Bold,
-    Italic,
-    List,
-    Link2,
-    Image as ImageIcon,
-    Type,
     X,
-    Upload
+    Upload,
+    Calendar,
+    Clock,
+    User
 } from "lucide-react";
 import {
     Select,
@@ -26,6 +25,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 export interface EditorPostData {
     id?: string;
@@ -36,6 +37,13 @@ export interface EditorPostData {
     tags: string[];
     images: string[];
     category?: string;
+    author?: string;
+    readTime?: number;
+    publishedAt?: string;
+    featured?: boolean;
+    metaTitle?: string;
+    metaDescription?: string;
+    slug?: string;
 }
 
 interface BlogEditorProps {
@@ -43,40 +51,82 @@ interface BlogEditorProps {
     onSave: (post: EditorPostData) => void;
     onPublish: (post: EditorPostData) => void;
     post?: EditorPostData | null;
+    authors?: { id: string; name: string }[];
 }
 
-export  function BlogEditor({ onBack, onSave, onPublish, post }: BlogEditorProps) {
+const Tiptap = dynamic(() => import("./Tiptap"), { ssr: false });
+
+export function BlogEditor({ onBack, onSave, onPublish, post, authors = [] }: BlogEditorProps) {
     const [title, setTitle] = useState(post?.title || "");
     const [content, setContent] = useState(post?.content || "");
+    const [excerpt, setExcerpt] = useState(post?.excerpt || "");
     const [category, setCategory] = useState(post?.category || "");
     const [tags, setTags] = useState<string[]>(post?.tags || []);
     const [tagInput, setTagInput] = useState("");
     const [images, setImages] = useState<string[]>(post?.images || []);
+    const [author, setAuthor] = useState(post?.author || "");
+    const [readTime, setReadTime] = useState(post?.readTime || 5);
+    const [featured, setFeatured] = useState(post?.featured || false);
+    const [metaTitle, setMetaTitle] = useState(post?.metaTitle || "");
+    const [metaDescription, setMetaDescription] = useState(post?.metaDescription || "");
+    const [slug, setSlug] = useState(post?.slug || "");
     const [showPreview, setShowPreview] = useState(false);
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    const generateSlug = useCallback((title: string) => {
+        return title
+            .toLowerCase()
+            .replace(/[^a-z0-9 -]/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/-+/g, '-')
+            .trim();
+    }, []);
+
+    const handleTitleChange = (value: string) => {
+        setTitle(value);
+        if (!slug || slug === generateSlug(title)) {
+            setSlug(generateSlug(value));
+        }
+    };
+
     const handleSave = () => {
-        const postData = {
+        const postData: EditorPostData = {
             id: post?.id,
             title,
             content,
+            excerpt,
             category,
             tags,
             images,
-            status: "draft" as const,
+            status: "draft",
+            author,
+            readTime,
+            featured,
+            metaTitle: metaTitle || title,
+            metaDescription: metaDescription || excerpt.substring(0, 160),
+            slug: slug || generateSlug(title),
         };
         onSave(postData);
     };
 
     const handlePublish = () => {
-        const postData = {
+        const postData: EditorPostData = {
             id: post?.id,
             title,
             content,
+            excerpt,
             category,
             tags,
             images,
-            status: "published" as const,
+            status: "published",
+            author,
+            readTime,
+            featured,
+            metaTitle: metaTitle || title,
+            metaDescription: metaDescription || excerpt.substring(0, 160),
+            slug: slug || generateSlug(title),
+            publishedAt: new Date().toISOString(),
         };
         onPublish(postData);
     };
@@ -95,7 +145,6 @@ export  function BlogEditor({ onBack, onSave, onPublish, post }: BlogEditorProps
         setTags(tags.filter(tag => tag !== tagToRemove));
     };
 
-    // inside BlogEditor component
     const uploadStagedFile = async (stagedFile: File | Blob): Promise<string> => {
         const form = new FormData();
         form.append("file", stagedFile);
@@ -120,7 +169,7 @@ export  function BlogEditor({ onBack, onSave, onPublish, post }: BlogEditorProps
 
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
-        if (files) {
+        if (files && files.length > 0) {
             for (const file of Array.from(files)) {
                 try {
                     const imageUrl = await uploadStagedFile(file);
@@ -136,9 +185,16 @@ export  function BlogEditor({ onBack, onSave, onPublish, post }: BlogEditorProps
         setImages(images.filter((_, i) => i !== index));
     };
 
-    const insertImageAtCursor = (imageUrl: string) => {
-        const imageMarkdown = `\n![Image](${imageUrl})\n`;
-        setContent(prev => prev + imageMarkdown);
+    const calculateReadTime = (content: string) => {
+        const wordsPerMinute = 200;
+        const text = content.replace(/<[^>]*>/g, '');
+        const wordCount = text.split(/\s+/).length;
+        return Math.max(1, Math.round(wordCount / wordsPerMinute));
+    };
+
+    const handleContentChange = (newContent: string) => {
+        setContent(newContent);
+        setReadTime(calculateReadTime(newContent));
     };
 
     return (
@@ -184,7 +240,7 @@ export  function BlogEditor({ onBack, onSave, onPublish, post }: BlogEditorProps
                     {showPreview ? (
                         // Preview Mode
                         <Card className="p-8 bg-surface-gradient shadow-soft">
-                            <article className="prose prose-lg max-w-none">
+                            <article className="prose prose-lg max-w-none dark:prose-invert">
                                 <header className="mb-8">
                                     <div className="flex items-center gap-2 mb-4">
                                         {category && <Badge>{category}</Badge>}
@@ -197,12 +253,25 @@ export  function BlogEditor({ onBack, onSave, onPublish, post }: BlogEditorProps
                                     <h1 className="text-4xl font-bold mb-4 text-foreground">
                                         {title || "Untitled Post"}
                                     </h1>
-                                    <div className="text-muted-foreground text-sm">
-                                        {new Date().toLocaleDateString("en-US", {
-                                            year: "numeric",
-                                            month: "long",
-                                            day: "numeric",
-                                        })}
+                                    <div className="flex items-center gap-4 text-muted-foreground text-sm">
+                                        {author && (
+                                            <div className="flex items-center gap-1">
+                                                <User className="h-4 w-4" />
+                                                <span>{author}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex items-center gap-1">
+                                            <Calendar className="h-4 w-4" />
+                                            <span>{new Date().toLocaleDateString("en-US", {
+                                                year: "numeric",
+                                                month: "long",
+                                                day: "numeric",
+                                            })}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <Clock className="h-4 w-4" />
+                                            <span>{readTime} min read</span>
+                                        </div>
                                     </div>
                                 </header>
 
@@ -222,44 +291,71 @@ export  function BlogEditor({ onBack, onSave, onPublish, post }: BlogEditorProps
                                     </div>
                                 )}
 
-                                <div className="prose-content text-foreground leading-relaxed">
-                                    {content.split('\n').map((paragraph, index) => (
-                                        <p key={index} className="mb-4">
-                                            {paragraph}
-                                        </p>
-                                    ))}
-                                </div>
+                                <div
+                                    className="prose-content text-foreground leading-relaxed"
+                                    dangerouslySetInnerHTML={{ __html: content }}
+                                />
                             </article>
                         </Card>
                     ) : (
                         // Edit Mode
                         <div className="space-y-6">
-                            {/* Title and Category */}
+                            {/* Title and Basic Info */}
                             <div className="space-y-4">
                                 <Input
                                     placeholder="Enter your post title..."
                                     value={title}
-                                    onChange={(e) => setTitle(e.target.value)}
+                                    onChange={(e) => handleTitleChange(e.target.value)}
                                     className="text-2xl font-semibold border-none bg-transparent px-0 py-3 focus-visible:ring-0 placeholder:text-muted-foreground"
                                 />
 
-                                <div className="flex gap-4">
-                                    <Select value={category} onValueChange={setCategory}>
-                                        <SelectTrigger className="w-48">
-                                            <SelectValue placeholder="Select category" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="health-tips">Health Tips</SelectItem>
-                                            <SelectItem value="wellness">Wellness</SelectItem>
-                                            <SelectItem value="pediatrics">Pediatrics</SelectItem>
-                                            <SelectItem value="emergency-care">Emergency Care</SelectItem>
-                                            <SelectItem value="surgery">Surgery</SelectItem>
-                                            <SelectItem value="hospital-updates">Hospital Updates</SelectItem>
-                                            <SelectItem value="patient-stories">Patient Stories</SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-foreground">Category</label>
+                                        <Select value={category} onValueChange={setCategory}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select category" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="health-tips">Health Tips</SelectItem>
+                                                <SelectItem value="wellness">Wellness</SelectItem>
+                                                <SelectItem value="pediatrics">Pediatrics</SelectItem>
+                                                <SelectItem value="emergency-care">Emergency Care</SelectItem>
+                                                <SelectItem value="surgery">Surgery</SelectItem>
+                                                <SelectItem value="hospital-updates">Hospital Updates</SelectItem>
+                                                <SelectItem value="patient-stories">Patient Stories</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    {authors.length > 0 && (
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-foreground">Author</label>
+                                            <Select value={author} onValueChange={setAuthor}>
+                                                <SelectTrigger>
+                                                    <SelectValue placeholder="Select author" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {authors.map((authorObj) => (
+                                                        <SelectItem key={authorObj.id} value={authorObj.name}>
+                                                            {authorObj.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    )}
                                 </div>
 
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-foreground">Excerpt</label>
+                                    <Textarea
+                                        placeholder="Brief description of your post..."
+                                        value={excerpt}
+                                        onChange={(e) => setExcerpt(e.target.value)}
+                                        className="min-h-[80px]"
+                                    />
+                                </div>
                             </div>
 
                             {/* Tags */}
@@ -291,7 +387,7 @@ export  function BlogEditor({ onBack, onSave, onPublish, post }: BlogEditorProps
 
                             {/* Image Upload */}
                             <div className="space-y-3">
-                                <label className="text-sm font-medium text-foreground">Images</label>
+                                <label className="text-sm font-medium text-foreground">Featured Images</label>
                                 <div className="flex gap-3">
                                     <input
                                         ref={fileInputRef}
@@ -323,15 +419,7 @@ export  function BlogEditor({ onBack, onSave, onPublish, post }: BlogEditorProps
                                                     height={200}
                                                     className="w-full h-24 object-cover rounded-lg border"
                                                 />
-                                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center gap-2">
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8 text-white hover:bg-white/20"
-                                                        onClick={() => insertImageAtCursor(image)}
-                                                    >
-                                                        <ImageIcon className="h-4 w-4" />
-                                                    </Button>
+                                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
                                                     <Button
                                                         variant="ghost"
                                                         size="icon"
@@ -347,50 +435,78 @@ export  function BlogEditor({ onBack, onSave, onPublish, post }: BlogEditorProps
                                 )}
                             </div>
 
-                            {/* Toolbar */}
-                            <Card className="p-3 bg-muted/30">
-                                <div className="flex items-center gap-1">
-                                    <Button variant="ghost" size="sm">
-                                        <Bold className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="sm">
-                                        <Italic className="h-4 w-4" />
-                                    </Button>
-                                    <div className="w-px h-6 bg-border mx-2" />
-                                    <Button variant="ghost" size="sm">
-                                        <List className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="sm">
-                                        <Link2 className="h-4 w-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="sm" onClick={() => fileInputRef.current?.click()}>
-                                        <ImageIcon className="h-4 w-4" />
-                                    </Button>
-                                    <div className="w-px h-6 bg-border mx-2" />
-                                    <Button variant="ghost" size="sm">
-                                        <Type className="h-4 w-4" />
+                            {/* Content Editor */}
+                            <div className="space-y-3">
+                                <label className="text-sm font-medium text-foreground">Content</label>
+                                <Tiptap
+                                    content={content}
+                                    onChange={handleContentChange}
+                                    onImageUpload={() => fileInputRef.current?.click()}
+                                    placeholder="Start writing your post..."
+                                />
+                            </div>
+
+                            {/* Advanced Settings */}
+                            <div className="space-y-4 pt-4 border-t">
+                                <div className="flex items-center justify-between">
+                                    <h3 className="text-lg font-medium">Advanced Settings</h3>
+                                    <Button variant="ghost" onClick={() => setShowAdvanced(!showAdvanced)}>
+                                        {showAdvanced ? "Hide" : "Show"} Advanced
                                     </Button>
                                 </div>
-                            </Card>
 
-                            {/* Content Editor */}
-                            <Card className="overflow-hidden">
-                                <Textarea
-                                    placeholder="Start writing your post...
+                                {showAdvanced && (
+                                    <div className="grid grid-cols-1 gap-4 p-4 border rounded-lg">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-foreground">Slug</label>
+                                                <Input
+                                                    value={slug}
+                                                    onChange={(e) => setSlug(e.target.value)}
+                                                    placeholder="Post URL slug"
+                                                />
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-medium text-foreground">Read Time (minutes)</label>
+                                                <Input
+                                                    type="number"
+                                                    value={readTime}
+                                                    onChange={(e) => setReadTime(parseInt(e.target.value) || 5)}
+                                                    min="1"
+                                                />
+                                            </div>
+                                        </div>
 
-You can write in markdown or plain text. The editor supports:
-- **Bold text**
-- *Italic text*
-- Lists and links
-- Images (upload above or use ![alt](url) syntax)
-- And much more!
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-foreground">Meta Title</label>
+                                            <Input
+                                                value={metaTitle}
+                                                onChange={(e) => setMetaTitle(e.target.value)}
+                                                placeholder="SEO meta title"
+                                            />
+                                        </div>
 
-Focus on your content, we'll handle the rest."
-                                    value={content}
-                                    onChange={(e) => setContent(e.target.value)}
-                                    className="min-h-[500px] border-none bg-transparent p-6 text-base leading-relaxed resize-none focus-visible:ring-0"
-                                />
-                            </Card>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-foreground">Meta Description</label>
+                                            <Textarea
+                                                value={metaDescription}
+                                                onChange={(e) => setMetaDescription(e.target.value)}
+                                                placeholder="SEO meta description"
+                                                className="min-h-[80px]"
+                                            />
+                                        </div>
+
+                                        <div className="flex items-center space-x-2">
+                                            <Switch
+                                                id="featured"
+                                                checked={featured}
+                                                onCheckedChange={setFeatured}
+                                            />
+                                            <Label htmlFor="featured">Feature this post</Label>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
