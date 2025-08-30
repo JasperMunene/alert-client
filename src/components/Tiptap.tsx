@@ -1,6 +1,7 @@
 // components/TiptapEditor.tsx
 "use client";
 
+import { useState, useEffect } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
@@ -30,7 +31,7 @@ import {
     Heading1,
     Heading2,
     Heading3,
-    Minus
+    Minus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -41,6 +42,12 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import { Input } from "@/components/ui/input";
 
 interface TiptapEditorProps {
     content: string;
@@ -49,7 +56,12 @@ interface TiptapEditorProps {
     placeholder?: string;
 }
 
-export default function Tiptap({ content, onChange, onImageUpload, placeholder = "Write something..." }: TiptapEditorProps) {
+export default function Tiptap({
+                                   content,
+                                   onChange,
+                                   onImageUpload,
+                                   placeholder = "Write something...",
+                               }: TiptapEditorProps) {
     const editor = useEditor({
         extensions: [
             StarterKit.configure({
@@ -70,7 +82,7 @@ export default function Tiptap({ content, onChange, onImageUpload, placeholder =
             }),
             Underline,
             TextAlign.configure({
-                types: ['heading', 'paragraph'],
+                types: ["heading", "paragraph"],
             }),
             Highlight.configure({
                 multicolor: true,
@@ -86,10 +98,21 @@ export default function Tiptap({ content, onChange, onImageUpload, placeholder =
         },
         editorProps: {
             attributes: {
-                class: "prose prose-lg max-w-none focus:outline-none dark:prose-invert prose-headings:font-bold prose-blockquote:border-l-primary",
+                class:
+                    "prose prose-lg max-w-none focus:outline-none dark:prose-invert prose-headings:font-bold prose-blockquote:border-l-primary",
             },
         },
     });
+
+    const [linkUrl, setLinkUrl] = useState("");
+    const [open, setOpen] = useState(false);
+
+    useEffect(() => {
+        if (editor) {
+            const prevUrl = editor.getAttributes("link").href || "";
+            setLinkUrl(prevUrl);
+        }
+    }, [editor, open]);
 
     if (!editor) return null;
 
@@ -99,17 +122,13 @@ export default function Tiptap({ content, onChange, onImageUpload, placeholder =
         }
     };
 
-    const setLink = () => {
-        const previousUrl = editor.getAttributes('link').href;
-        const url = window.prompt('URL', previousUrl);
-
-        if (url === null) return;
-        if (url === '') {
+    const handleSetLink = () => {
+        if (linkUrl === "") {
             editor.chain().focus().unsetLink().run();
-            return;
+        } else {
+            editor.chain().focus().setLink({ href: linkUrl }).run();
         }
-
-        editor.chain().focus().setLink({ href: url }).run();
+        setOpen(false);
     };
 
     return (
@@ -117,16 +136,36 @@ export default function Tiptap({ content, onChange, onImageUpload, placeholder =
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-1 border-b p-2 bg-muted/30">
                 {/* Text formatting */}
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().toggleBold().run()} className={editor.isActive("bold") ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleBold().run()}
+                    className={editor.isActive("bold") ? "bg-muted" : ""}
+                >
                     <Bold className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().toggleItalic().run()} className={editor.isActive("italic") ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleItalic().run()}
+                    className={editor.isActive("italic") ? "bg-muted" : ""}
+                >
                     <Italic className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().toggleUnderline().run()} className={editor.isActive("underline") ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleUnderline().run()}
+                    className={editor.isActive("underline") ? "bg-muted" : ""}
+                >
                     <UnderlineIcon className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().toggleHighlight().run()} className={editor.isActive("highlight") ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleHighlight().run()}
+                    className={editor.isActive("highlight") ? "bg-muted" : ""}
+                >
                     <Highlighter className="h-4 w-4" />
                 </Button>
 
@@ -140,16 +179,30 @@ export default function Tiptap({ content, onChange, onImageUpload, placeholder =
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start">
-                        <DropdownMenuItem onClick={() => editor.chain().focus().setParagraph().run()}>
+                        <DropdownMenuItem
+                            onClick={() => editor.chain().focus().setParagraph().run()}
+                        >
                             Paragraph
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
+                        <DropdownMenuItem
+                            onClick={() =>
+                                editor.chain().focus().toggleHeading({ level: 1 }).run()
+                            }
+                        >
                             <Heading1 className="h-4 w-4 mr-2" /> Heading 1
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+                        <DropdownMenuItem
+                            onClick={() =>
+                                editor.chain().focus().toggleHeading({ level: 2 }).run()
+                            }
+                        >
                             <Heading2 className="h-4 w-4 mr-2" /> Heading 2
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+                        <DropdownMenuItem
+                            onClick={() =>
+                                editor.chain().focus().toggleHeading({ level: 3 }).run()
+                            }
+                        >
                             <Heading3 className="h-4 w-4 mr-2" /> Heading 3
                         </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -158,48 +211,133 @@ export default function Tiptap({ content, onChange, onImageUpload, placeholder =
                 <Separator orientation="vertical" className="h-6 mx-1" />
 
                 {/* Lists */}
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().toggleBulletList().run()} className={editor.isActive("bulletList") ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleBulletList().run()}
+                    className={editor.isActive("bulletList") ? "bg-muted" : ""}
+                >
                     <List className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().toggleOrderedList().run()} className={editor.isActive("orderedList") ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                    className={editor.isActive("orderedList") ? "bg-muted" : ""}
+                >
                     <ListOrdered className="h-4 w-4" />
                 </Button>
 
                 <Separator orientation="vertical" className="h-6 mx-1" />
 
                 {/* Alignment */}
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().setTextAlign('left').run()} className={editor.isActive({ textAlign: 'left' }) ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().setTextAlign("left").run()}
+                    className={
+                        editor.isActive({ textAlign: "left" }) ? "bg-muted" : ""
+                    }
+                >
                     <AlignLeft className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().setTextAlign('center').run()} className={editor.isActive({ textAlign: 'center' }) ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().setTextAlign("center").run()}
+                    className={
+                        editor.isActive({ textAlign: "center" }) ? "bg-muted" : ""
+                    }
+                >
                     <AlignCenter className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().setTextAlign('right').run()} className={editor.isActive({ textAlign: 'right' }) ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().setTextAlign("right").run()}
+                    className={
+                        editor.isActive({ textAlign: "right" }) ? "bg-muted" : ""
+                    }
+                >
                     <AlignRight className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().setTextAlign('justify').run()} className={editor.isActive({ textAlign: 'justify' }) ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().setTextAlign("justify").run()}
+                    className={
+                        editor.isActive({ textAlign: "justify" }) ? "bg-muted" : ""
+                    }
+                >
                     <AlignJustify className="h-4 w-4" />
                 </Button>
 
                 <Separator orientation="vertical" className="h-6 mx-1" />
 
                 {/* Special blocks */}
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().toggleBlockquote().run()} className={editor.isActive("blockquote") ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                    className={editor.isActive("blockquote") ? "bg-muted" : ""}
+                >
                     <Quote className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().toggleCodeBlock().run()} className={editor.isActive("codeBlock") ? "bg-muted" : ""}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                    className={editor.isActive("codeBlock") ? "bg-muted" : ""}
+                >
                     <Code className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().setHorizontalRule().run()}
+                >
                     <Minus className="h-4 w-4" />
                 </Button>
 
                 <Separator orientation="vertical" className="h-6 mx-1" />
 
                 {/* Links & Media */}
-                <Button variant="ghost" size="sm" onClick={setLink} className={editor.isActive("link") ? "bg-muted" : ""}>
-                    <Link2 className="h-4 w-4" />
-                </Button>
+                <Popover open={open} onOpenChange={setOpen}>
+                    <PopoverTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className={editor.isActive("link") ? "bg-muted" : ""}
+                        >
+                            <Link2 className="h-4 w-4" />
+                        </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-4 space-y-2">
+                        <Input
+                            placeholder="Enter URL..."
+                            value={linkUrl}
+                            onChange={(e) => setLinkUrl(e.target.value)}
+                        />
+                        <div className="flex justify-end gap-2">
+                            {editor.isActive("link") && (
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => {
+                                        editor.chain().focus().unsetLink().run();
+                                        setLinkUrl("");
+                                        setOpen(false);
+                                    }}
+                                >
+                                    Remove
+                                </Button>
+                            )}
+                            <Button size="sm" onClick={handleSetLink}>
+                                Apply
+                            </Button>
+                        </div>
+                    </PopoverContent>
+                </Popover>
                 <Button variant="ghost" size="sm" onClick={onImageUpload}>
                     <ImageIcon className="h-4 w-4" />
                 </Button>
@@ -207,10 +345,20 @@ export default function Tiptap({ content, onChange, onImageUpload, placeholder =
                 <Separator orientation="vertical" className="h-6 mx-1" />
 
                 {/* History */}
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().undo().run()}
+                    disabled={!editor.can().undo()}
+                >
                     <Undo className="h-4 w-4" />
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()}>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => editor.chain().focus().redo().run()}
+                    disabled={!editor.can().redo()}
+                >
                     <Redo className="h-4 w-4" />
                 </Button>
             </div>
