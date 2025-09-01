@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { BlogCard } from "@/components/BlogCard";
 import { BlogEditor } from "@/components/BlogEditor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Search, Filter, Heart, Stethoscope } from "lucide-react";
+import { Plus, Search, Filter, Heart, Stethoscope, RefreshCw } from "lucide-react";
 import {
     Select,
     SelectContent,
@@ -32,7 +32,7 @@ interface Author {
     updated_at: string;
 }
 
-// Define the Post interface based on your backend response
+// Define the Post interface
 interface Post {
     id: string;
     title: string;
@@ -49,7 +49,6 @@ interface Post {
     published_at?: string;
     tags?: Tag[];
     views?: number;
-    // Computed fields for frontend compatibility
     category?: string;
     readingTime?: string;
     publishedAt?: string;
@@ -65,95 +64,252 @@ interface EditorPostData {
     images: string[];
 }
 
-
 const API_BASE_URL = 'https://alert-server-xzlx.onrender.com/api/v1';
+
+// Enhanced API service with retry logic and caching
+class ApiService {
+    private static cache = new Map<string, { data: any; timestamp: number }>();
+    private static readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+    static async fetchWithRetry(url: string, options: RequestInit = {}, maxRetries = 3): Promise<Response> {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+        try {
+            const fetchOptions = {
+                ...options,
+                signal: controller.signal,
+            };
+
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    const response = await fetch(url, fetchOptions);
+                    clearTimeout(timeoutId);
+
+                    if (response.ok) {
+                        return response;
+                    }
+
+                    // If it's the last attempt or a non-retryable error, throw
+                    if (attempt === maxRetries || response.status < 500) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    // Wait before retry with exponential backoff
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+
+                } catch (error) {
+                    clearTimeout(timeoutId);
+
+                    if (attempt === maxRetries) {
+                        throw error;
+                    }
+
+                    // Only retry on network errors, not abort errors
+                    if (error instanceof Error && error.name === 'AbortError') {
+                        throw error;
+                    }
+
+                    // Wait before retry
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+                }
+            }
+
+            throw new Error('Max retries exceeded');
+        } catch (error) {
+            clearTimeout(timeoutId);
+            throw error;
+        }
+    }
+
+    static getCachedData(key: string) {
+        const cached = this.cache.get(key);
+        if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+            return cached.data;
+        }
+        return null;
+    }
+
+    static setCachedData(key: string, data: any) {
+        this.cache.set(key, { data, timestamp: Date.now() });
+    }
+
+    static async fetchPosts(): Promise<Post[]> {
+        const cacheKey = 'posts';
+        const cachedData = this.getCachedData(cacheKey);
+
+        if (cachedData) {
+            return cachedData;
+        }
+
+        const response = await this.fetchWithRetry(`${API_BASE_URL}/posts`);
+        const data = await response.json();
+
+        const processedPosts = (data.posts || []).map((post: Post) => ({
+            ...post,
+            category: post.tags && post.tags.length > 0 ? post.tags[0].name : 'General',
+            readingTime: `${Math.ceil((post.body || '').split(' ').length / 200)} min`,
+            publishedAt: post.published_at
+                ? new Date(post.published_at).toLocaleDateString()
+                : 'Draft',
+            views: post.views || 0
+        }));
+
+        this.setCachedData(cacheKey, processedPosts);
+        return processedPosts;
+    }
+
+    static async fetchPost(id: string): Promise<Post> {
+        const cacheKey = `post-${id}`;
+        const cachedData = this.getCachedData(cacheKey);
+
+        if (cachedData) {
+            return cachedData;
+        }
+
+        const response = await this.fetchWithRetry(`${API_BASE_URL}/posts/${id}`);
+        const data = await response.json();
+
+        this.setCachedData(cacheKey, data);
+        return data;
+    }
+
+    static async deletePost(id: string): Promise<void> {
+        await this.fetchWithRetry(`${API_BASE_URL}/posts/${id}`, { method: 'DELETE' });
+        // Invalidate cache
+        this.cache.delete('posts');
+        this.cache.delete(`post-${id}`);
+    }
+
+    static async savePost(postData: any, id?: string): Promise<Post> {
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `${API_BASE_URL}/posts/${id}` : `${API_BASE_URL}/posts`;
+
+        const response = await this.fetchWithRetry(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(postData),
+        });
+
+        const result = await response.json();
+
+        // Invalidate cache
+        this.cache.delete('posts');
+        if (id) {
+            this.cache.delete(`post-${id}`);
+        }
+
+        return result;
+    }
+}
 
 export default function Blog() {
     const [posts, setPosts] = useState<Post[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [retrying, setRetrying] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [categoryFilter, setCategoryFilter] = useState("all");
     const [statusFilter, setStatusFilter] = useState("all");
     const [currentView, setCurrentView] = useState<"dashboard" | "editor">("dashboard");
     const [editingPost, setEditingPost] = useState<EditorPostData | null>(null);
 
-    // Fetch posts from backend
-    const fetchPosts = async () => {
+    // Optimized fetch function with better error handling
+    const fetchPosts = useCallback(async (showRetryState = false) => {
         try {
-            setLoading(true);
-            setError(null);
-            const response = await fetch(`${API_BASE_URL}/posts`);
-
-            if (!response.ok) {
-                throw new Error(`Failed to fetch articles: ${response.status} ${response.statusText}`);
+            if (showRetryState) {
+                setRetrying(true);
+            } else {
+                setLoading(true);
             }
+            setError(null);
 
-            const data = await response.json();
-
-            // Process posts to add computed fields
-            const processedPosts = (data.posts || []).map((post: Post) => ({
-                ...post,
-                category: post.tags && post.tags.length > 0 ? post.tags[0].name : 'General',
-                readingTime: `${Math.ceil((post.body || '').split(' ').length / 200)} min`,
-                publishedAt: post.published_at
-                    ? new Date(post.published_at).toLocaleDateString()
-                    : 'Draft',
-                views: post.views || 0
-            }));
-
+            const processedPosts = await ApiService.fetchPosts();
             setPosts(processedPosts);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to fetch articles';
             setError(errorMessage);
             console.error('Error fetching posts:', err);
-            // Set empty array on error to prevent UI issues
-            setPosts([]);
+            // Don't clear posts on error if we have cached data
+            if (posts.length === 0) {
+                setPosts([]);
+            }
         } finally {
             setLoading(false);
+            setRetrying(false);
         }
-    };
+    }, [posts.length]);
 
+    // Initial load with retry logic
     useEffect(() => {
-        fetchPosts();
-    }, []);
+        let isMounted = true;
 
-    const filteredPosts = posts.filter((post) => {
-        const matchesSearch = post.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            post.excerpt.toLowerCase().includes(searchQuery.toLowerCase());
+        const initialFetch = async () => {
+            try {
+                await fetchPosts();
+            } catch (error) {
+                // If initial fetch fails, try once more after a short delay
+                if (isMounted) {
+                    setTimeout(() => {
+                        if (isMounted) {
+                            fetchPosts();
+                        }
+                    }, 2000);
+                }
+            }
+        };
 
-        // Use the first tag name as category if available
-        const postCategory = post.tags && post.tags.length > 0 ? post.tags[0].name : 'General';
-        const matchesCategory = categoryFilter === "all" ||
-            postCategory.toLowerCase() === categoryFilter.toLowerCase();
+        initialFetch();
 
-        const matchesStatus = statusFilter === "all" || post.status === statusFilter;
+        return () => {
+            isMounted = false;
+        };
+    }, [fetchPosts]);
 
-        return matchesSearch && matchesCategory && matchesStatus;
-    });
+    // Memoized filtered posts for performance
+    const filteredPosts = useMemo(() => {
+        return posts.filter((post) => {
+            const matchesSearch = post.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                post.excerpt.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const handleNewPost = () => {
+            const postCategory = post.tags && post.tags.length > 0 ? post.tags[0].name : 'General';
+            const matchesCategory = categoryFilter === "all" ||
+                postCategory.toLowerCase() === categoryFilter.toLowerCase();
+
+            const matchesStatus = statusFilter === "all" || post.status === statusFilter;
+
+            return matchesSearch && matchesCategory && matchesStatus;
+        });
+    }, [posts, searchQuery, categoryFilter, statusFilter]);
+
+    // Memoized categories
+    const uniqueCategories = useMemo(() => {
+        const categories = new Set<string>();
+        posts.forEach(post => {
+            if (post.tags && post.tags.length > 0) {
+                post.tags.forEach(tag => categories.add(tag.name));
+            } else {
+                categories.add('General');
+            }
+        });
+        return Array.from(categories);
+    }, [posts]);
+
+    const handleNewPost = useCallback(() => {
         setEditingPost(null);
         setCurrentView("editor");
-    };
+    }, []);
 
-    const handleEditPost = async (id: string) => {
+    const handleEditPost = useCallback(async (id: string) => {
         try {
             setError(null);
-            const response = await fetch(`${API_BASE_URL}/posts/${id}`);
+            const postData = await ApiService.fetchPost(id);
 
-            if (!response.ok) {
-                throw new Error(`Failed to fetch article: ${response.status} ${response.statusText}`);
-            }
-
-            const postData = await response.json();
-
-            // Format the post data for the editor
-            const editorPost = {
+            const editorPost: EditorPostData = {
                 id: postData.id,
                 title: postData.title,
-                content: postData.body, // Map body to content
-                category: postData.tags && postData.tags.length > 0 ? postData.tags[0].name : 'General',
+                content: postData.body,
+                excerpt: postData.excerpt,
                 status: postData.status,
                 tags: postData.tags ? postData.tags.map((tag: Tag) => tag.name) : [],
                 images: postData.cover_image ? [postData.cover_image] : []
@@ -166,67 +322,44 @@ export default function Blog() {
             setError(errorMessage);
             console.error('Error fetching post:', err);
         }
-    };
+    }, []);
 
-    const handleDeletePost = async (id: string) => {
+    const handleDeletePost = useCallback(async (id: string) => {
         if (!confirm('Are you sure you want to delete this article?')) {
             return;
         }
 
         try {
             setError(null);
-            const response = await fetch(`${API_BASE_URL}/posts/${id}`, {
-                method: 'DELETE'
-            });
-
-            if (!response.ok) {
-                throw new Error(`Failed to delete article: ${response.status} ${response.statusText}`);
-            }
-
-            // Refresh the posts list
-            await fetchPosts();
+            await ApiService.deletePost(id);
+            // Optimistically update UI
+            setPosts(prev => prev.filter(post => post.id !== id));
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Failed to delete article';
             setError(errorMessage);
             console.error('Error deleting post:', err);
+            // Refresh on error to ensure consistency
+            fetchPosts();
         }
-    };
+    }, [fetchPosts]);
 
-    // Removed handleViewPost - now using direct links in BlogCard component
-
-    const handleSavePost = async (postData: EditorPostData) => {
+    const handleSavePost = useCallback(async (postData: EditorPostData) => {
         try {
             setError(null);
-            const method = postData.id ? 'PUT' : 'POST';
-            const url = postData.id
-                ? `${API_BASE_URL}/posts/${postData.id}`
-                : `${API_BASE_URL}/posts`;
 
-            // Format the data for the backend
             const formattedPostData = {
                 title: postData.title,
-                body: postData.content, // Map content to body
+                body: postData.content,
                 excerpt: postData.excerpt || '',
                 status: postData.status,
                 cover_image: postData.images && postData.images.length > 0 ? postData.images[0] : '',
                 tags: postData.tags || [],
-                author_id: "09764df6-0217-44bd-ad68-929943796677" // You'll need to replace this with actual user ID
+                author_id: "09764df6-0217-44bd-ad68-929943796677"
             };
 
-            const response = await fetch(url, {
-                method,
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formattedPostData),
-            });
+            await ApiService.savePost(formattedPostData, postData.id);
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-            }
-
-            // Refresh the posts list
+            // Refresh posts and return to dashboard
             await fetchPosts();
             setCurrentView("dashboard");
         } catch (err) {
@@ -234,42 +367,26 @@ export default function Blog() {
             setError(errorMessage);
             console.error('Error saving post:', err);
         }
-    };
+    }, [fetchPosts]);
 
-    const handlePublishPost = async (postData: EditorPostData) => {
+    const handlePublishPost = useCallback(async (postData: EditorPostData) => {
         try {
             setError(null);
-            const method = postData.id ? 'PUT' : 'POST';
-            const url = postData.id
-                ? `${API_BASE_URL}/posts/${postData.id}`
-                : `${API_BASE_URL}/posts`;
 
-            // Format the data for the backend
             const formattedPostData = {
                 title: postData.title,
-                body: postData.content, // Map content to body
+                body: postData.content,
                 excerpt: postData.excerpt || '',
-                status: "published",
+                status: "published" as const,
                 published_at: new Date().toISOString(),
                 cover_image: postData.images && postData.images.length > 0 ? postData.images[0] : '',
                 tags: postData.tags || [],
-                author_id: "09764df6-0217-44bd-ad68-929943796677" // You'll need to replace this with actual user ID
+                author_id: "09764df6-0217-44bd-ad68-929943796677"
             };
 
-            const response = await fetch(url, {
-                method,
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(formattedPostData),
-            });
+            await ApiService.savePost(formattedPostData, postData.id);
 
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `Failed to publish article: ${response.status}`);
-            }
-
-            // Refresh the posts list
+            // Refresh posts and return to dashboard
             await fetchPosts();
             setCurrentView("dashboard");
         } catch (err) {
@@ -277,20 +394,11 @@ export default function Blog() {
             setError(errorMessage);
             console.error('Error publishing post:', err);
         }
-    };
+    }, [fetchPosts]);
 
-    // Get unique categories from all posts
-    const getUniqueCategories = () => {
-        const categories = new Set<string>();
-        posts.forEach(post => {
-            if (post.tags && post.tags.length > 0) {
-                post.tags.forEach(tag => categories.add(tag.name));
-            } else {
-                categories.add('General');
-            }
-        });
-        return Array.from(categories);
-    };
+    const handleRetry = useCallback(() => {
+        fetchPosts(true);
+    }, [fetchPosts]);
 
     if (currentView === "editor") {
         return (
@@ -314,6 +422,8 @@ export default function Blog() {
                         className="w-full h-full object-cover opacity-10"
                         fill
                         priority
+                        placeholder="blur"
+                        blurDataURL="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAhEAACAQMDBQAAAAAAAAAAAAABAgMABAUGIWGRkqGx0f/EABQBAQAAAAAAAAAAAAAAAAAAAAD/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX7sAg"
                     />
                 </div>
                 <div className="relative container mx-auto px-6 py-16">
@@ -349,19 +459,56 @@ export default function Blog() {
                             Manage and organize your published medical articles, patient stories, and health education content
                         </p>
                     </div>
-                    <Button variant="default" onClick={handleNewPost}>
-                        <Stethoscope className="h-4 w-4 mr-2" />
-                        New Article
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            onClick={handleRetry}
+                            disabled={loading || retrying}
+                            size="sm"
+                        >
+                            <RefreshCw className={`h-4 w-4 mr-2 ${retrying ? 'animate-spin' : ''}`} />
+                            Refresh
+                        </Button>
+                        <Button variant="default" onClick={handleNewPost}>
+                            <Stethoscope className="h-4 w-4 mr-2" />
+                            New Article
+                        </Button>
+                    </div>
                 </div>
 
-                {/* Error message */}
+                {/* Enhanced Error message with retry */}
                 {error && (
-                    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
-                        <p>Error: {error}</p>
-                        <Button variant="outline" size="sm" onClick={() => setError(null)} className="mt-2">
-                            Dismiss
-                        </Button>
+                    <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg mb-6">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="font-medium">Connection Error</p>
+                                <p className="text-sm text-red-600">{error}</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handleRetry}
+                                    disabled={retrying}
+                                >
+                                    {retrying ? (
+                                        <>
+                                            <RefreshCw className="h-3 w-3 mr-1 animate-spin" />
+                                            Retrying...
+                                        </>
+                                    ) : (
+                                        'Retry'
+                                    )}
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setError(null)}
+                                >
+                                    Dismiss
+                                </Button>
+                            </div>
+                        </div>
                     </div>
                 )}
 
@@ -385,8 +532,7 @@ export default function Blog() {
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="all">All Categories</SelectItem>
-                                {/* Generate categories from tag names */}
-                                {getUniqueCategories().map((category: string) => (
+                                {uniqueCategories.map((category: string) => (
                                     <SelectItem key={category} value={category.toLowerCase()}>
                                         {category}
                                     </SelectItem>
@@ -418,6 +564,16 @@ export default function Blog() {
                     </div>
                 )}
 
+                {/* Retrying state */}
+                {retrying && !loading && (
+                    <div className="text-center py-6">
+                        <div className="inline-flex items-center gap-2 text-muted-foreground">
+                            <RefreshCw className="h-4 w-4 animate-spin" />
+                            Retrying connection...
+                        </div>
+                    </div>
+                )}
+
                 {/* Posts Grid */}
                 {!loading && filteredPosts.length > 0 ? (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -427,33 +583,35 @@ export default function Blog() {
                                 post={post}
                                 onEdit={handleEditPost}
                                 onDelete={handleDeletePost}
-                                onView={() => {}} // No longer needed - using direct links
+                                onView={() => {}}
                             />
                         ))}
                     </div>
                 ) : (
-                    !loading && (
+                    !loading && !retrying && (
                         <div className="text-center py-12">
                             <div className="text-muted-foreground mb-4">
-                                {searchQuery || categoryFilter !== "all" || statusFilter !== "all"
-                                    ? "No articles match your filters"
-                                    : "No medical articles yet"}
+                                {error ? (
+                                    "Unable to load articles. Please check your connection and try again."
+                                ) : searchQuery || categoryFilter !== "all" || statusFilter !== "all" ? (
+                                    "No articles match your filters"
+                                ) : (
+                                    "No medical articles yet"
+                                )}
                             </div>
-                            <Button variant="outline" onClick={handleNewPost}>
-                                <Plus className="h-4 w-4 mr-2" />
-                                Create Your First Medical Article
-                            </Button>
+                            {error ? (
+                                <Button variant="outline" onClick={handleRetry} disabled={retrying}>
+                                    <RefreshCw className={`h-4 w-4 mr-2 ${retrying ? 'animate-spin' : ''}`} />
+                                    Try Again
+                                </Button>
+                            ) : (
+                                <Button variant="outline" onClick={handleNewPost}>
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Create Your First Medical Article
+                                </Button>
+                            )}
                         </div>
                     )
-                )}
-
-                {/* Retry button when there's an error and no posts */}
-                {!loading && error && posts.length === 0 && (
-                    <div className="text-center py-6">
-                        <Button variant="outline" onClick={fetchPosts}>
-                            Try Again
-                        </Button>
-                    </div>
                 )}
             </section>
         </div>
